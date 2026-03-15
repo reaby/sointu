@@ -512,7 +512,7 @@ var validParameters = map[string](map[string]bool){}
 func init() {
 	for name, unitType := range sointu.UnitTypes {
 		validParameters[name] = map[string]bool{}
-		for _, param := range unitType {
+		for _, param := range unitType.Params {
 			validParameters[name][param.Name] = true
 		}
 	}

@@ -270,12 +270,7 @@ func (m *UnitModel) SetType(t string) {
 	for len(m.d.Song.Patch[m.d.InstrIndex].Units) <= m.d.UnitIndex {
 		m.d.Song.Patch[m.d.InstrIndex].Units = append(m.d.Song.Patch[m.d.InstrIndex].Units, sointu.Unit{})
 	}
-	unit, ok := defaultUnits[t]
-	if !ok { // if the type is invalid, we just set it to empty unit
-		unit = sointu.Unit{Parameters: make(map[string]int)}
-	} else {
-		unit = unit.Copy()
-	}
+	unit := sointu.MakeUnit(t)
 	oldUnit := m.d.Song.Patch[m.d.InstrIndex].Units[m.d.UnitIndex]
 	if oldUnit.Type == unit.Type {
 		return

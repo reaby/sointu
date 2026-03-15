@@ -81,15 +81,11 @@ type (
 
 	ParamMap map[string]int
 
-	// UnitParameter documents one parameter that an unit takes
-	UnitParameter struct {
-		Name        string // thould be found with this name in the Unit.Parameters map
-		MinValue    int    // minimum value of the parameter, inclusive
-		MaxValue    int    // maximum value of the parameter, inclusive
-		Neutral     int    // neutral value of the parameter
-		CanSet      bool   // if true, then this parameter can be set through the gui
-		CanModulate bool   // if true, then this parameter can be modulated i.e. has a port number in "send" unit
-		DisplayFunc UnitParameterDisplayFunc
+	// UnitType documents the parameters and stack use of a unit type
+	UnitType struct {
+		Params         []UnitParameter
+		DefaultVarArgs []int
+		StackUse       func(*Unit) StackUse
 	}
 
 	// StackUse documents how a unit will affect the signal stack.
@@ -99,133 +95,358 @@ type (
 		NumOutputs int     // NumOutputs is the number of outputs produced by the unit. This is used to determine how many outputs are needed for the unit.
 	}
 
+	// UnitParameter documents one parameter that an unit takes
+	UnitParameter struct {
+		Name        string // thould be found with this name in the Unit.Parameters map
+		MinValue    int    // minimum value of the parameter, inclusive
+		MaxValue    int    // maximum value of the parameter, inclusive
+		Neutral     int    // neutral value of the parameter
+		Default     int    // the default value of the parameter
+		CanSet      bool   // if true, then this parameter can be set through the gui
+		CanModulate bool   // if true, then this parameter can be modulated i.e. has a port number in "send" unit
+		DisplayFunc UnitParameterDisplayFunc
+	}
+
 	UnitParameterDisplayFunc func(int) (value string, unit string)
 )
 
-// UnitTypes documents all the available unit types and if they support stereo variant
-// and what parameters they take.
-var UnitTypes = map[string]([]UnitParameter){
-	"add":      []UnitParameter{{Name: "stereo", MinValue: 0, MaxValue: 1, CanSet: true, CanModulate: false}},
-	"addp":     []UnitParameter{{Name: "stereo", MinValue: 0, MaxValue: 1, CanSet: true, CanModulate: false}},
-	"pop":      []UnitParameter{{Name: "stereo", MinValue: 0, MaxValue: 1, CanSet: true, CanModulate: false}},
-	"loadnote": []UnitParameter{{Name: "stereo", MinValue: 0, MaxValue: 1, CanSet: true, CanModulate: false}},
-	"mul":      []UnitParameter{{Name: "stereo", MinValue: 0, MaxValue: 1, CanSet: true, CanModulate: false}},
-	"mulp":     []UnitParameter{{Name: "stereo", MinValue: 0, MaxValue: 1, CanSet: true, CanModulate: false}},
-	"push":     []UnitParameter{{Name: "stereo", MinValue: 0, MaxValue: 1, CanSet: true, CanModulate: false}},
-	"xch":      []UnitParameter{{Name: "stereo", MinValue: 0, MaxValue: 1, CanSet: true, CanModulate: false}},
-	"distort": []UnitParameter{
-		{Name: "stereo", MinValue: 0, MaxValue: 1, CanSet: true, CanModulate: false},
-		{Name: "drive", MinValue: 0, Neutral: 64, MaxValue: 128, CanSet: true, CanModulate: true}},
-	"hold": []UnitParameter{
-		{Name: "stereo", MinValue: 0, MaxValue: 1, CanSet: true, CanModulate: false},
-		{Name: "holdfreq", MinValue: 0, MaxValue: 128, CanSet: true, CanModulate: true}},
-	"crush": []UnitParameter{
-		{Name: "stereo", MinValue: 0, MaxValue: 1, CanSet: true, CanModulate: false},
-		{Name: "resolution", MinValue: 0, MaxValue: 128, CanSet: true, CanModulate: true, DisplayFunc: func(v int) (string, string) { return formatFloat(24 * float64(v) / 128), "bits" }}},
-	"gain": []UnitParameter{
-		{Name: "stereo", MinValue: 0, MaxValue: 1, CanSet: true, CanModulate: false},
-		{Name: "gain", MinValue: 0, MaxValue: 128, CanSet: true, CanModulate: true, DisplayFunc: func(v int) (string, string) { return strconv.FormatFloat(toDecibel(float64(v)/128), 'g', 3, 64), "dB" }}},
-	"invgain": []UnitParameter{
-		{Name: "stereo", MinValue: 0, MaxValue: 1, CanSet: true, CanModulate: false},
-		{Name: "invgain", MinValue: 0, MaxValue: 128, CanSet: true, CanModulate: true, DisplayFunc: func(v int) (string, string) { return strconv.FormatFloat(toDecibel(128/float64(v)), 'g', 3, 64), "dB" }}},
-	"dbgain": []UnitParameter{
-		{Name: "stereo", MinValue: 0, MaxValue: 1, CanSet: true, CanModulate: false},
-		{Name: "decibels", MinValue: 0, Neutral: 64, MaxValue: 128, CanSet: true, CanModulate: true, DisplayFunc: func(v int) (string, string) { return formatFloat(40 * (float64(v)/64 - 1)), "dB" }}},
-	"filter": []UnitParameter{
-		{Name: "stereo", MinValue: 0, MaxValue: 1, CanSet: true, CanModulate: false},
-		{Name: "frequency", MinValue: 0, MaxValue: 128, CanSet: true, CanModulate: true, DisplayFunc: filterFrequencyDispFunc},
-		{Name: "resonance", MinValue: 0, Neutral: 128, MaxValue: 128, CanSet: true, CanModulate: true, DisplayFunc: func(v int) (string, string) {
-			return strconv.FormatFloat(toDecibel(128/float64(v)), 'g', 3, 64), "Q dB"
-		}},
-		{Name: "lowpass", MinValue: 0, MaxValue: 1, CanSet: true, CanModulate: false},
-		{Name: "bandpass", MinValue: -1, MaxValue: 1, CanSet: true, CanModulate: false},
-		{Name: "highpass", MinValue: -1, MaxValue: 1, CanSet: true, CanModulate: false}},
-	"clip": []UnitParameter{{Name: "stereo", MinValue: 0, MaxValue: 1, CanSet: true, CanModulate: false}},
-	"pan": []UnitParameter{
-		{Name: "stereo", MinValue: 0, MaxValue: 1, CanSet: true, CanModulate: false},
-		{Name: "panning", MinValue: 0, Neutral: 64, MaxValue: 128, CanSet: true, CanModulate: true}},
-	"delay": []UnitParameter{
-		{Name: "stereo", MinValue: 0, MaxValue: 1, CanSet: true, CanModulate: false},
-		{Name: "pregain", MinValue: 0, MaxValue: 128, CanSet: true, CanModulate: true},
-		{Name: "dry", MinValue: 0, MaxValue: 128, CanSet: true, CanModulate: true},
-		{Name: "feedback", MinValue: 0, MaxValue: 128, CanSet: true, CanModulate: true},
-		{Name: "damp", MinValue: 0, MaxValue: 128, CanSet: true, CanModulate: true},
-		{Name: "notetracking", MinValue: 0, MaxValue: 2, CanSet: true, CanModulate: false, DisplayFunc: arrDispFunc(noteTrackingNames[:])},
-		{Name: "delaytime", MinValue: 0, MaxValue: -1, CanSet: false, CanModulate: true}},
-	"compressor": []UnitParameter{
-		{Name: "stereo", MinValue: 0, MaxValue: 1, CanSet: true, CanModulate: false},
-		{Name: "attack", MinValue: 0, MaxValue: 128, CanSet: true, CanModulate: true, DisplayFunc: compressorTimeDispFunc},
-		{Name: "release", MinValue: 0, MaxValue: 128, CanSet: true, CanModulate: true, DisplayFunc: compressorTimeDispFunc},
-		{Name: "invgain", MinValue: 0, MaxValue: 128, CanSet: true, CanModulate: true, DisplayFunc: func(v int) (string, string) {
-			return strconv.FormatFloat(toDecibel(128/float64(v)), 'g', 3, 64), "dB"
-		}},
-		{Name: "threshold", MinValue: 0, MaxValue: 128, CanSet: true, CanModulate: true, DisplayFunc: func(v int) (string, string) {
-			return strconv.FormatFloat(toDecibel(float64(v)/128), 'g', 3, 64), "dB"
-		}},
-		{Name: "ratio", MinValue: 0, MaxValue: 128, CanSet: true, CanModulate: true, DisplayFunc: func(v int) (string, string) { return formatFloat(1 - float64(v)/128), "" }}},
-	"speed": []UnitParameter{},
-	"out": []UnitParameter{
-		{Name: "stereo", MinValue: 0, MaxValue: 1, CanSet: true, CanModulate: false},
-		{Name: "gain", MinValue: 0, MaxValue: 128, CanSet: true, CanModulate: true, DisplayFunc: func(v int) (string, string) { return strconv.FormatFloat(toDecibel(float64(v)/128), 'g', 3, 64), "dB" }}},
-	"outaux": []UnitParameter{
-		{Name: "stereo", MinValue: 0, MaxValue: 1, CanSet: true, CanModulate: false},
-		{Name: "outgain", MinValue: 0, MaxValue: 128, CanSet: true, CanModulate: true, DisplayFunc: func(v int) (string, string) { return strconv.FormatFloat(toDecibel(float64(v)/128), 'g', 3, 64), "dB" }},
-		{Name: "auxgain", MinValue: 0, MaxValue: 128, CanSet: true, CanModulate: true, DisplayFunc: func(v int) (string, string) { return strconv.FormatFloat(toDecibel(float64(v)/128), 'g', 3, 64), "dB" }}},
-	"aux": []UnitParameter{
-		{Name: "stereo", MinValue: 0, MaxValue: 1, CanSet: true, CanModulate: false},
-		{Name: "gain", MinValue: 0, MaxValue: 128, CanSet: true, CanModulate: true, DisplayFunc: func(v int) (string, string) { return strconv.FormatFloat(toDecibel(float64(v)/128), 'g', 3, 64), "dB" }},
-		{Name: "channel", MinValue: 0, MaxValue: 6, CanSet: true, CanModulate: false, DisplayFunc: arrDispFunc(channelNames[:])}},
-	"send": []UnitParameter{
-		{Name: "stereo", MinValue: 0, MaxValue: 1, CanSet: true, CanModulate: false},
-		{Name: "amount", MinValue: 0, Neutral: 64, MaxValue: 128, CanSet: true, CanModulate: true, DisplayFunc: func(v int) (string, string) { return formatFloat(float64(v)/64 - 1), "" }},
-		{Name: "voice", MinValue: 0, MaxValue: 32, CanSet: true, CanModulate: false, DisplayFunc: sendVoiceDispFunc},
-		{Name: "target", MinValue: 0, MaxValue: math.MaxInt32, CanSet: true, CanModulate: false},
-		{Name: "port", MinValue: 0, MaxValue: 7, CanSet: true, CanModulate: false},
-		{Name: "sendpop", MinValue: 0, MaxValue: 1, CanSet: true, CanModulate: false}},
-	"envelope": []UnitParameter{
-		{Name: "stereo", MinValue: 0, MaxValue: 1, CanSet: true, CanModulate: false},
-		{Name: "attack", MinValue: 0, MaxValue: 128, CanSet: true, CanModulate: true, DisplayFunc: func(v int) (string, string) { return engineeringTime(math.Pow(2, 24*float64(v)/128) / 44100) }},
-		{Name: "decay", MinValue: 0, MaxValue: 128, CanSet: true, CanModulate: true, DisplayFunc: func(v int) (string, string) { return engineeringTime(math.Pow(2, 24*float64(v)/128) / 44100) }},
-		{Name: "sustain", MinValue: 0, MaxValue: 128, CanSet: true, CanModulate: true, DisplayFunc: func(v int) (string, string) { return strconv.FormatFloat(toDecibel(float64(v)/128), 'g', 3, 64), "dB" }},
-		{Name: "release", MinValue: 0, MaxValue: 128, CanSet: true, CanModulate: true, DisplayFunc: func(v int) (string, string) { return engineeringTime(math.Pow(2, 24*float64(v)/128) / 44100) }},
-		{Name: "gain", MinValue: 0, MaxValue: 128, CanSet: true, CanModulate: true, DisplayFunc: func(v int) (string, string) { return strconv.FormatFloat(toDecibel(float64(v)/128), 'g', 3, 64), "dB" }}},
-	"noise": []UnitParameter{
-		{Name: "stereo", MinValue: 0, MaxValue: 1, CanSet: true, CanModulate: false},
-		{Name: "shape", MinValue: 0, Neutral: 64, MaxValue: 128, CanSet: true, CanModulate: true},
-		{Name: "gain", MinValue: 0, MaxValue: 128, CanSet: true, CanModulate: true, DisplayFunc: func(v int) (string, string) { return strconv.FormatFloat(toDecibel(float64(v)/128), 'g', 3, 64), "dB" }}},
-	"oscillator": []UnitParameter{
-		{Name: "stereo", MinValue: 0, MaxValue: 1, CanSet: true, CanModulate: false},
-		{Name: "transpose", MinValue: 0, Neutral: 64, MaxValue: 128, CanSet: true, CanModulate: true, DisplayFunc: oscillatorTransposeDispFunc},
-		{Name: "detune", MinValue: 0, Neutral: 64, MaxValue: 128, CanSet: true, CanModulate: true, DisplayFunc: func(v int) (string, string) { return formatFloat(float64(v-64) / 64), "st" }},
-		{Name: "phase", MinValue: 0, MaxValue: 128, CanSet: true, CanModulate: true, DisplayFunc: func(v int) (string, string) {
-			return strconv.FormatFloat(float64(v)/128*360, 'f', 1, 64), "°"
-		}},
-		{Name: "color", MinValue: 0, MaxValue: 128, CanSet: true, CanModulate: true},
-		{Name: "shape", MinValue: 0, Neutral: 64, MaxValue: 128, CanSet: true, CanModulate: true},
-		{Name: "gain", MinValue: 0, MaxValue: 128, CanSet: true, CanModulate: true, DisplayFunc: func(v int) (string, string) { return strconv.FormatFloat(toDecibel(float64(v)/128), 'g', 3, 64), "dB" }},
-		{Name: "frequency", MinValue: 0, MaxValue: -1, CanSet: false, CanModulate: true},
-		{Name: "type", MinValue: int(Sine), MaxValue: int(Sample), CanSet: true, CanModulate: false, DisplayFunc: arrDispFunc(oscTypes[:])},
-		{Name: "lfo", MinValue: 0, MaxValue: 1, CanSet: true, CanModulate: false},
-		{Name: "unison", MinValue: 0, MaxValue: 3, CanSet: true, CanModulate: false},
-		{Name: "samplestart", MinValue: 0, MaxValue: 1720329, CanSet: true, CanModulate: false},
-		{Name: "loopstart", MinValue: 0, MaxValue: 65535, CanSet: true, CanModulate: false},
-		{Name: "looplength", MinValue: 0, MaxValue: 65535, CanSet: true, CanModulate: false}},
-	"loadval": []UnitParameter{
-		{Name: "stereo", MinValue: 0, MaxValue: 1, CanSet: true, CanModulate: false},
-		{Name: "value", MinValue: 0, MaxValue: 128, CanSet: true, CanModulate: true, DisplayFunc: func(v int) (string, string) { return formatFloat(float64(v)/64 - 1), "" }}},
-	"receive": []UnitParameter{
-		{Name: "stereo", MinValue: 0, MaxValue: 1, CanSet: true, CanModulate: false},
-		{Name: "left", MinValue: 0, MaxValue: -1, CanSet: false, CanModulate: true},
-		{Name: "right", MinValue: 0, MaxValue: -1, CanSet: false, CanModulate: true}},
-	"in": []UnitParameter{
-		{Name: "stereo", MinValue: 0, MaxValue: 1, CanSet: true, CanModulate: false},
-		{Name: "channel", MinValue: 0, MaxValue: 6, CanSet: true, CanModulate: false, DisplayFunc: arrDispFunc(channelNames[:])}},
-	"sync": []UnitParameter{},
-	"belleq": []UnitParameter{
-		{Name: "stereo", MinValue: 0, MaxValue: 1, CanSet: true, CanModulate: false},
-		{Name: "frequency", MinValue: 0, MaxValue: 128, CanSet: true, CanModulate: true, DisplayFunc: func(v int) (string, string) { return belleqFrequencyDisplay(v) }},
-		{Name: "bandwidth", MinValue: 0, MaxValue: 128, CanSet: true, CanModulate: true, DisplayFunc: func(v int) (string, string) { return belleqBandwidthDisplay(v) }},
-		{Name: "gain", MinValue: 0, Neutral: 64, MaxValue: 128, CanSet: true, CanModulate: true, DisplayFunc: func(v int) (string, string) { return belleqGainDisplay(v) }}},
+// UnitTypes documents all the available unit types and if they support stereo
+// variant and what parameters they take. If you add a new unit type, add it
+// here and also add its opcode to vm/opcodes.go by running "go generate ./vm"
+// in the terminal.
+var UnitTypes = map[string]UnitType{
+	"add": {
+		Params: []UnitParameter{{Name: "stereo", MinValue: 0, MaxValue: 1, CanSet: true, CanModulate: false}},
+		StackUse: func(unit *Unit) StackUse {
+			if stereo, ok := unit.Parameters["stereo"]; ok && stereo == 1 {
+				return StackUse{Inputs: [][]int{{0, 2}, {1, 3}, {2}, {3}}, Modifies: []bool{false, false, true, true}, NumOutputs: 4}
+			}
+			return StackUse{Inputs: [][]int{{0, 1}, {1}}, Modifies: []bool{false, true}, NumOutputs: 2}
+		},
+	},
+	"addp": {
+		Params: []UnitParameter{{Name: "stereo", MinValue: 0, MaxValue: 1, CanSet: true, CanModulate: false}},
+		StackUse: func(u *Unit) StackUse {
+			if stereo, ok := u.Parameters["stereo"]; ok && stereo == 1 {
+				return StackUse{Inputs: [][]int{{0}, {1}, {0}, {1}}, Modifies: []bool{true, true}, NumOutputs: 2}
+			}
+			return StackUse{Inputs: [][]int{{0}, {0}}, Modifies: []bool{true}, NumOutputs: 1}
+		},
+	},
+	"mul": {
+		Params: []UnitParameter{{Name: "stereo", MinValue: 0, MaxValue: 1, CanSet: true, CanModulate: false}},
+		StackUse: func(unit *Unit) StackUse {
+			if stereo, ok := unit.Parameters["stereo"]; ok && stereo == 1 {
+				return StackUse{Inputs: [][]int{{0, 2}, {1, 3}, {2}, {3}}, Modifies: []bool{false, false, true, true}, NumOutputs: 4}
+			}
+			return StackUse{Inputs: [][]int{{0, 1}, {1}}, Modifies: []bool{false, true}, NumOutputs: 2}
+		},
+	},
+	"mulp": {
+		Params: []UnitParameter{{Name: "stereo", MinValue: 0, MaxValue: 1, CanSet: true, CanModulate: false}},
+		StackUse: func(u *Unit) StackUse {
+			if stereo, ok := u.Parameters["stereo"]; ok && stereo == 1 {
+				return StackUse{Inputs: [][]int{{0}, {1}, {0}, {1}}, Modifies: []bool{true, true}, NumOutputs: 2}
+			}
+			return StackUse{Inputs: [][]int{{0}, {0}}, Modifies: []bool{true}, NumOutputs: 1}
+		},
+	},
+	"xch": {
+		Params: []UnitParameter{{Name: "stereo", MinValue: 0, MaxValue: 1, CanSet: true, CanModulate: false}},
+		StackUse: func(u *Unit) StackUse {
+			if stereo, ok := u.Parameters["stereo"]; ok && stereo == 1 {
+				return StackUse{Inputs: [][]int{{2}, {3}, {0}, {1}}, Modifies: []bool{false, false, false, false}, NumOutputs: 4}
+			}
+			return StackUse{Inputs: [][]int{{1}, {0}}, Modifies: []bool{false, false}, NumOutputs: 2}
+		},
+	},
+	"push": {
+		Params: []UnitParameter{{Name: "stereo", MinValue: 0, MaxValue: 1, CanSet: true, CanModulate: false}},
+		StackUse: func(u *Unit) StackUse {
+			if stereo, ok := u.Parameters["stereo"]; ok && stereo == 1 {
+				return StackUse{Inputs: [][]int{{0, 2}, {1, 3}}, Modifies: []bool{false, false, false, false}, NumOutputs: 4}
+			}
+			return StackUse{Inputs: [][]int{{0, 1}}, Modifies: []bool{false, false}, NumOutputs: 2}
+		},
+	},
+	"pop": {
+		Params:   []UnitParameter{{Name: "stereo", MinValue: 0, MaxValue: 1, CanSet: true, CanModulate: false}},
+		StackUse: stackUseSink,
+	},
+	"loadnote": {
+		Params:   []UnitParameter{{Name: "stereo", MinValue: 0, MaxValue: 1, CanSet: true, CanModulate: false}},
+		StackUse: stackUseSource,
+	},
+	"distort": {
+		Params: []UnitParameter{
+			{Name: "stereo", MinValue: 0, MaxValue: 1, CanSet: true, CanModulate: false},
+			{Name: "drive", MinValue: 0, Neutral: 64, Default: 64, MaxValue: 128, CanSet: true, CanModulate: true},
+		},
+		StackUse: stackUseEffect,
+	},
+	"hold": {
+		Params: []UnitParameter{
+			{Name: "stereo", MinValue: 0, MaxValue: 1, CanSet: true, CanModulate: false},
+			{Name: "holdfreq", MinValue: 0, Default: 64, MaxValue: 128, CanSet: true, CanModulate: true},
+		},
+		StackUse: stackUseEffect,
+	},
+	"crush": {
+		Params: []UnitParameter{
+			{Name: "stereo", MinValue: 0, MaxValue: 1, CanSet: true, CanModulate: false},
+			{Name: "resolution", MinValue: 0, Default: 64, MaxValue: 128, CanSet: true, CanModulate: true, DisplayFunc: func(v int) (string, string) { return formatFloat(24 * float64(v) / 128), "bits" }},
+		},
+		StackUse: stackUseEffect,
+	},
+	"gain": {
+		Params: []UnitParameter{
+			{Name: "stereo", MinValue: 0, MaxValue: 1, CanSet: true, CanModulate: false},
+			{Name: "gain", MinValue: 0, Default: 64, MaxValue: 128, CanSet: true, CanModulate: true, DisplayFunc: func(v int) (string, string) { return strconv.FormatFloat(toDecibel(float64(v)/128), 'g', 3, 64), "dB" }},
+		},
+		StackUse: stackUseEffect,
+	},
+	"invgain": {
+		Params: []UnitParameter{
+			{Name: "stereo", MinValue: 0, MaxValue: 1, CanSet: true, CanModulate: false},
+			{Name: "invgain", MinValue: 0, Default: 64, MaxValue: 128, CanSet: true, CanModulate: true, DisplayFunc: func(v int) (string, string) { return strconv.FormatFloat(toDecibel(128/float64(v)), 'g', 3, 64), "dB" }},
+		},
+		StackUse: stackUseEffect,
+	},
+	"dbgain": {
+		Params: []UnitParameter{
+			{Name: "stereo", MinValue: 0, MaxValue: 1, CanSet: true, CanModulate: false},
+			{Name: "decibels", MinValue: 0, Neutral: 64, Default: 64, MaxValue: 128, CanSet: true, CanModulate: true, DisplayFunc: func(v int) (string, string) { return formatFloat(40 * (float64(v)/64 - 1)), "dB" }},
+		},
+		StackUse: stackUseEffect,
+	},
+	"filter": {
+		Params: []UnitParameter{
+			{Name: "stereo", MinValue: 0, MaxValue: 1, CanSet: true, CanModulate: false},
+			{Name: "frequency", MinValue: 0, Default: 64, MaxValue: 128, CanSet: true, CanModulate: true, DisplayFunc: func(v int) (string, string) {
+				// https://www.musicdsp.org/en/latest/Filters/23-state-variable.html
+				// calls it cutoff" but it's actually the location of the
+				// resonance peak
+				freq := float64(v) / 128
+				return strconv.FormatFloat(math.Asin(freq*freq/2)/math.Pi*44100, 'f', 0, 64), "Hz"
+			},
+			},
+			{Name: "resonance", MinValue: 0, Default: 64, Neutral: 128, MaxValue: 128, CanSet: true, CanModulate: true, DisplayFunc: func(v int) (string, string) {
+				return strconv.FormatFloat(toDecibel(128/float64(v)), 'g', 3, 64), "Q dB"
+			}},
+			{Name: "lowpass", MinValue: 0, Default: 1, MaxValue: 1, CanSet: true, CanModulate: false},
+			{Name: "bandpass", MinValue: -1, MaxValue: 1, CanSet: true, CanModulate: false},
+			{Name: "highpass", MinValue: -1, MaxValue: 1, CanSet: true, CanModulate: false},
+		},
+		StackUse: stackUseEffect,
+	},
+	"clip": {
+		Params:   []UnitParameter{{Name: "stereo", MinValue: 0, MaxValue: 1, CanSet: true, CanModulate: false}},
+		StackUse: stackUseEffect,
+	},
+	"pan": {
+		Params: []UnitParameter{
+			{Name: "stereo", MinValue: 0, MaxValue: 1, CanSet: true, CanModulate: false},
+			{Name: "panning", MinValue: 0, Neutral: 64, Default: 64, MaxValue: 128, CanSet: true, CanModulate: true},
+		},
+		StackUse: func(u *Unit) StackUse {
+			if stereo, ok := u.Parameters["stereo"]; ok && stereo == 1 {
+				return StackUse{Inputs: [][]int{{0}, {1}}, Modifies: []bool{true, true}, NumOutputs: 2}
+			}
+			return StackUse{Inputs: [][]int{{0, 1}}, Modifies: []bool{true, true}, NumOutputs: 2}
+		},
+	},
+	"delay": {
+		Params: []UnitParameter{
+			{Name: "stereo", MinValue: 0, MaxValue: 1, CanSet: true, CanModulate: false},
+			{Name: "pregain", MinValue: 0, Default: 40, MaxValue: 128, CanSet: true, CanModulate: true},
+			{Name: "dry", MinValue: 0, Default: 128, MaxValue: 128, CanSet: true, CanModulate: true},
+			{Name: "feedback", MinValue: 0, Default: 96, MaxValue: 128, CanSet: true, CanModulate: true},
+			{Name: "damp", MinValue: 0, MaxValue: 128, CanSet: true, CanModulate: true},
+			{Name: "notetracking", MinValue: 0, Default: 2, MaxValue: 2, CanSet: true, CanModulate: false, DisplayFunc: arrDispFunc([]string{"fixed", "pitch", "BPM"})},
+			{Name: "delaytime", MinValue: 0, MaxValue: -1, CanSet: false, CanModulate: true},
+		},
+		DefaultVarArgs: []int{48},
+		StackUse:       stackUseEffect,
+	},
+	"compressor": {
+		Params: []UnitParameter{
+			{Name: "stereo", MinValue: 0, MaxValue: 1, CanSet: true, CanModulate: false},
+			{Name: "attack", MinValue: 0, Default: 64, MaxValue: 128, CanSet: true, CanModulate: true, DisplayFunc: compressorTimeDispFunc},
+			{Name: "release", MinValue: 0, Default: 64, MaxValue: 128, CanSet: true, CanModulate: true, DisplayFunc: compressorTimeDispFunc},
+			{Name: "invgain", MinValue: 0, Default: 64, MaxValue: 128, CanSet: true, CanModulate: true, DisplayFunc: func(v int) (string, string) {
+				return strconv.FormatFloat(toDecibel(128/float64(v)), 'g', 3, 64), "dB"
+			}},
+			{Name: "threshold", MinValue: 0, Default: 64, MaxValue: 128, CanSet: true, CanModulate: true, DisplayFunc: func(v int) (string, string) {
+				return strconv.FormatFloat(toDecibel(float64(v)/128), 'g', 3, 64), "dB"
+			}},
+			{Name: "ratio", MinValue: 0, Default: 64, MaxValue: 128, CanSet: true, CanModulate: true, DisplayFunc: func(v int) (string, string) { return formatFloat(1 - float64(v)/128), "" }},
+		},
+		StackUse: func(u *Unit) StackUse {
+			if stereo, ok := u.Parameters["stereo"]; ok && stereo == 1 {
+				return StackUse{Inputs: [][]int{{0, 2, 3}, {1, 2, 3}}, Modifies: []bool{false, false, true, true}, NumOutputs: 4}
+			}
+			return StackUse{Inputs: [][]int{{0, 1}}, Modifies: []bool{false, true}, NumOutputs: 2}
+		},
+	},
+	"speed": {
+		Params:   []UnitParameter{},
+		StackUse: func(u *Unit) StackUse { return StackUse{Inputs: [][]int{{0}}, Modifies: []bool{true}, NumOutputs: 0} },
+	},
+	"out": {
+		Params: []UnitParameter{
+			{Name: "stereo", MinValue: 0, Default: 1, MaxValue: 1, CanSet: true, CanModulate: false},
+			{Name: "gain", MinValue: 0, Default: 64, MaxValue: 128, CanSet: true, CanModulate: true, DisplayFunc: func(v int) (string, string) { return strconv.FormatFloat(toDecibel(float64(v)/128), 'g', 3, 64), "dB" }},
+		},
+		StackUse: stackUseSink,
+	},
+	"outaux": {
+		Params: []UnitParameter{
+			{Name: "stereo", MinValue: 0, Default: 1, MaxValue: 1, CanSet: true, CanModulate: false},
+			{Name: "outgain", MinValue: 0, Default: 64, MaxValue: 128, CanSet: true, CanModulate: true, DisplayFunc: func(v int) (string, string) { return strconv.FormatFloat(toDecibel(float64(v)/128), 'g', 3, 64), "dB" }},
+			{Name: "auxgain", MinValue: 0, Default: 64, MaxValue: 128, CanSet: true, CanModulate: true, DisplayFunc: func(v int) (string, string) { return strconv.FormatFloat(toDecibel(float64(v)/128), 'g', 3, 64), "dB" }},
+		},
+		StackUse: stackUseSink,
+	},
+	"aux": {
+		Params: []UnitParameter{
+			{Name: "stereo", MinValue: 0, Default: 1, MaxValue: 1, CanSet: true, CanModulate: false},
+			{Name: "gain", MinValue: 0, Default: 64, MaxValue: 128, CanSet: true, CanModulate: true, DisplayFunc: func(v int) (string, string) { return strconv.FormatFloat(toDecibel(float64(v)/128), 'g', 3, 64), "dB" }},
+			{Name: "channel", MinValue: 0, Default: 2, MaxValue: 6, CanSet: true, CanModulate: false, DisplayFunc: arrDispFunc(channelNames[:])},
+		},
+		StackUse: stackUseSink,
+	},
+	"send": {
+		Params: []UnitParameter{
+			{Name: "stereo", MinValue: 0, MaxValue: 1, CanSet: true, CanModulate: false},
+			{Name: "amount", MinValue: 0, Neutral: 64, Default: 64, MaxValue: 128, CanSet: true, CanModulate: true, DisplayFunc: func(v int) (string, string) { return formatFloat(float64(v)/64 - 1), "" }},
+			{Name: "voice", MinValue: 0, MaxValue: 32, CanSet: true, CanModulate: false, DisplayFunc: func(v int) (string, string) {
+				if v == 0 {
+					return "default", ""
+				}
+				return strconv.Itoa(v), ""
+			}},
+			{Name: "target", MinValue: 0, MaxValue: math.MaxInt32, CanSet: true, CanModulate: false},
+			{Name: "port", MinValue: 0, MaxValue: 7, CanSet: true, CanModulate: false},
+			{Name: "sendpop", MinValue: 0, Default: 1, MaxValue: 1, CanSet: true, CanModulate: false},
+		},
+		StackUse: func(u *Unit) StackUse {
+			ret := StackUse{Inputs: [][]int{{0}}, Modifies: []bool{true}, NumOutputs: 1}
+			if stereo, ok := u.Parameters["stereo"]; ok && stereo == 1 {
+				ret = StackUse{Inputs: [][]int{{0}, {1}}, Modifies: []bool{true, true}, NumOutputs: 2}
+			}
+			if sendpop, ok := u.Parameters["sendpop"]; ok && sendpop == 1 {
+				ret.NumOutputs = 0
+			}
+			return ret
+		},
+	},
+	"envelope": {
+		Params: []UnitParameter{
+			{Name: "stereo", MinValue: 0, MaxValue: 1, CanSet: true, CanModulate: false},
+			{Name: "attack", MinValue: 0, Default: 64, MaxValue: 128, CanSet: true, CanModulate: true, DisplayFunc: func(v int) (string, string) { return engineeringTime(math.Pow(2, 24*float64(v)/128) / 44100) }},
+			{Name: "decay", MinValue: 0, Default: 64, MaxValue: 128, CanSet: true, CanModulate: true, DisplayFunc: func(v int) (string, string) { return engineeringTime(math.Pow(2, 24*float64(v)/128) / 44100) }},
+			{Name: "sustain", MinValue: 0, Default: 64, MaxValue: 128, CanSet: true, CanModulate: true, DisplayFunc: func(v int) (string, string) { return strconv.FormatFloat(toDecibel(float64(v)/128), 'g', 3, 64), "dB" }},
+			{Name: "release", MinValue: 0, Default: 64, MaxValue: 128, CanSet: true, CanModulate: true, DisplayFunc: func(v int) (string, string) { return engineeringTime(math.Pow(2, 24*float64(v)/128) / 44100) }},
+			{Name: "gain", MinValue: 0, Default: 64, MaxValue: 128, CanSet: true, CanModulate: true, DisplayFunc: func(v int) (string, string) { return strconv.FormatFloat(toDecibel(float64(v)/128), 'g', 3, 64), "dB" }},
+		},
+		StackUse: stackUseSource,
+	},
+	"noise": {
+		Params: []UnitParameter{
+			{Name: "stereo", MinValue: 0, MaxValue: 1, CanSet: true, CanModulate: false},
+			{Name: "shape", MinValue: 0, Neutral: 64, Default: 64, MaxValue: 128, CanSet: true, CanModulate: true},
+			{Name: "gain", MinValue: 0, Default: 64, MaxValue: 128, CanSet: true, CanModulate: true, DisplayFunc: func(v int) (string, string) { return strconv.FormatFloat(toDecibel(float64(v)/128), 'g', 3, 64), "dB" }},
+		},
+		StackUse: stackUseSource,
+	},
+	"oscillator": {
+		Params: []UnitParameter{
+			{Name: "stereo", MinValue: 0, MaxValue: 1, CanSet: true, CanModulate: false},
+			{Name: "transpose", MinValue: 0, Neutral: 64, Default: 64, MaxValue: 128, CanSet: true, CanModulate: true, DisplayFunc: func(v int) (string, string) {
+				relvalue := v - 64
+				if relvalue%12 == 0 {
+					return strconv.Itoa(relvalue / 12), "oct"
+				}
+				return strconv.Itoa(relvalue), "st"
+			}},
+			{Name: "detune", MinValue: 0, Neutral: 64, Default: 64, MaxValue: 128, CanSet: true, CanModulate: true, DisplayFunc: func(v int) (string, string) { return formatFloat(float64(v-64) / 64), "st" }},
+			{Name: "phase", MinValue: 0, MaxValue: 128, CanSet: true, CanModulate: true, DisplayFunc: func(v int) (string, string) {
+				return strconv.FormatFloat(float64(v)/128*360, 'f', 1, 64), "°"
+			}},
+			{Name: "color", MinValue: 0, Default: 64, MaxValue: 128, CanSet: true, CanModulate: true},
+			{Name: "shape", MinValue: 0, Neutral: 64, Default: 64, MaxValue: 128, CanSet: true, CanModulate: true},
+			{Name: "gain", MinValue: 0, Default: 64, MaxValue: 128, CanSet: true, CanModulate: true, DisplayFunc: func(v int) (string, string) { return strconv.FormatFloat(toDecibel(float64(v)/128), 'g', 3, 64), "dB" }},
+			{Name: "frequency", MinValue: 0, MaxValue: -1, CanSet: false, CanModulate: true},
+			{Name: "type", MinValue: int(Sine), Default: int(Sine), MaxValue: int(Sample), CanSet: true, CanModulate: false, DisplayFunc: arrDispFunc([]string{"sine", "trisaw", "pulse", "gate", "sample"})},
+			{Name: "lfo", MinValue: 0, MaxValue: 1, CanSet: true, CanModulate: false},
+			{Name: "unison", MinValue: 0, MaxValue: 3, CanSet: true, CanModulate: false},
+			{Name: "samplestart", MinValue: 0, MaxValue: 1720329, CanSet: true, CanModulate: false},
+			{Name: "loopstart", MinValue: 0, MaxValue: 65535, CanSet: true, CanModulate: false},
+			{Name: "looplength", MinValue: 0, MaxValue: 65535, CanSet: true, CanModulate: false},
+		},
+		StackUse: stackUseSource,
+	},
+	"loadval": {
+		Params: []UnitParameter{
+			{Name: "stereo", MinValue: 0, MaxValue: 1, CanSet: true, CanModulate: false},
+			{Name: "value", MinValue: 0, Default: 64, MaxValue: 128, CanSet: true, CanModulate: true, DisplayFunc: func(v int) (string, string) { return formatFloat(float64(v)/64 - 1), "" }},
+		},
+		StackUse: stackUseSource,
+	},
+	"receive": {
+		Params: []UnitParameter{
+			{Name: "stereo", MinValue: 0, MaxValue: 1, CanSet: true, CanModulate: false},
+			{Name: "left", MinValue: 0, MaxValue: -1, CanSet: false, CanModulate: true},
+			{Name: "right", MinValue: 0, MaxValue: -1, CanSet: false, CanModulate: true},
+		},
+		StackUse: stackUseSource,
+	},
+	"in": {
+		Params: []UnitParameter{
+			{Name: "stereo", MinValue: 0, Default: 1, MaxValue: 1, CanSet: true, CanModulate: false},
+			{Name: "channel", MinValue: 0, Default: 2, MaxValue: 6, CanSet: true, CanModulate: false, DisplayFunc: arrDispFunc(channelNames[:])},
+		},
+		StackUse: stackUseSource,
+	},
+	"sync": {
+		Params:   []UnitParameter{},
+		StackUse: func(u *Unit) StackUse { return StackUse{Inputs: [][]int{{0}}, Modifies: []bool{false}, NumOutputs: 1} },
+	},
+	"belleq": {
+		Params: []UnitParameter{
+			{Name: "stereo", MinValue: 0, MaxValue: 1, CanSet: true, CanModulate: false},
+			{Name: "frequency", MinValue: 0, Default: 64, MaxValue: 128, CanSet: true, CanModulate: true, DisplayFunc: func(v int) (string, string) {
+				freq := float64(v) / 128
+				return strconv.FormatFloat(44100*2*freq*freq/math.Pi/2, 'f', 0, 64), "Hz"
+			}},
+			{Name: "bandwidth", MinValue: 0, Default: 64, MaxValue: 128, CanSet: true, CanModulate: true, DisplayFunc: func(v int) (string, string) { return strconv.FormatFloat(1/(4*float64(v)/128), 'f', 2, 64), "Q" }},
+			{Name: "gain", MinValue: 0, Neutral: 64, Default: 64, MaxValue: 128, CanSet: true, CanModulate: true, DisplayFunc: func(v int) (string, string) {
+				return strconv.FormatFloat(40*(float64(v)/64-1), 'f', 2, 64), "dB"
+			}},
+		},
+		StackUse: stackUseEffect,
+	},
+}
+
+func stackUseSource(u *Unit) StackUse {
+	if stereo, ok := u.Parameters["stereo"]; ok && stereo == 1 {
+		return StackUse{Inputs: [][]int{}, Modifies: []bool{true, true}, NumOutputs: 2}
+	}
+	return StackUse{Inputs: [][]int{}, Modifies: []bool{true}, NumOutputs: 1}
+}
+
+func stackUseSink(u *Unit) StackUse {
+	if stereo, ok := u.Parameters["stereo"]; ok && stereo == 1 {
+		return StackUse{Inputs: [][]int{{0}, {1}}, Modifies: []bool{true, true}, NumOutputs: 0}
+	}
+	return StackUse{Inputs: [][]int{{0}}, Modifies: []bool{true}, NumOutputs: 0}
+}
+
+func stackUseEffect(u *Unit) StackUse {
+	if stereo, ok := u.Parameters["stereo"]; ok && stereo == 1 {
+		return StackUse{Inputs: [][]int{{0}, {1}}, Modifies: []bool{true, true}, NumOutputs: 2}
+	}
+	return StackUse{Inputs: [][]int{{0}}, Modifies: []bool{true}, NumOutputs: 1}
 }
 
 // compile errors if interface is not implemented.
@@ -253,8 +474,6 @@ func (a *ParamMap) UnmarshalYAML(value *yaml.Node) error {
 }
 
 var channelNames = [...]string{"left", "right", "aux1 left", "aux1 right", "aux2 left", "aux2 right", "aux3 left", "aux3 right"}
-var noteTrackingNames = [...]string{"fixed", "pitch", "BPM"}
-var oscTypes = [...]string{"sine", "trisaw", "pulse", "gate", "sample"}
 
 func arrDispFunc(arr []string) UnitParameterDisplayFunc {
 	return func(v int) (string, string) {
@@ -265,52 +484,10 @@ func arrDispFunc(arr []string) UnitParameterDisplayFunc {
 	}
 }
 
-func filterFrequencyDispFunc(v int) (string, string) {
-	// In https://www.musicdsp.org/en/latest/Filters/23-state-variable.html,
-	// they call it "cutoff" but it's actually the location of the resonance
-	// peak
-	freq := float64(v) / 128
-	p := freq * freq
-	f := math.Asin(p/2) / math.Pi * 44100
-	return strconv.FormatFloat(f, 'f', 0, 64), "Hz"
-}
-
-func belleqFrequencyDisplay(v int) (string, string) {
-	freq := float64(v) / 128
-	p := 2 * freq * freq
-	f := 44100 * p / math.Pi / 2
-	return strconv.FormatFloat(f, 'f', 0, 64), "Hz"
-}
-
-func belleqBandwidthDisplay(v int) (string, string) {
-	p := float64(v) / 128
-	Q := 1 / (4 * p)
-	return strconv.FormatFloat(Q, 'f', 2, 64), "Q"
-}
-
-func belleqGainDisplay(v int) (string, string) {
-	return strconv.FormatFloat(40*(float64(v)/64-1), 'f', 2, 64), "dB"
-}
-
 func compressorTimeDispFunc(v int) (string, string) {
 	alpha := math.Pow(2, -24*float64(v)/128) // alpha is the "smoothing factor" of first order low pass iir
 	sec := -1 / (44100 * math.Log(1-alpha))  // from smoothing factor to time constant, https://en.wikipedia.org/wiki/Exponential_smoothing
 	return engineeringTime(sec)
-}
-
-func oscillatorTransposeDispFunc(v int) (string, string) {
-	relvalue := v - 64
-	if relvalue%12 == 0 {
-		return strconv.Itoa(relvalue / 12), "oct"
-	}
-	return strconv.Itoa(relvalue), "st"
-}
-
-func sendVoiceDispFunc(v int) (string, string) {
-	if v == 0 {
-		return "default", ""
-	}
-	return strconv.Itoa(v), ""
 }
 
 func engineeringTime(sec float64) (string, string) {
@@ -367,13 +544,31 @@ var Ports = make(map[string]([]string))
 func init() {
 	for name, unitType := range UnitTypes {
 		unitPorts := make([]string, 0)
-		for _, param := range unitType {
+		for _, param := range unitType.Params {
 			if param.CanModulate {
 				unitPorts = append(unitPorts, param.Name)
 			}
 		}
 		Ports[name] = unitPorts
 	}
+}
+
+func MakeUnit(unitType string) Unit {
+	if ut, ok := UnitTypes[unitType]; ok {
+		ret := Unit{
+			Type:       unitType,
+			Parameters: make(map[string]int),
+			VarArgs:    make([]int, len(ut.DefaultVarArgs)),
+		}
+		copy(ret.VarArgs, ut.DefaultVarArgs)
+		for _, p := range ut.Params {
+			if p.Default > 0 {
+				ret.Parameters[p.Name] = p.Default
+			}
+		}
+		return ret
+	}
+	return Unit{Parameters: make(map[string]int)}
 }
 
 // Copy makes a deep copy of a unit.
@@ -388,102 +583,14 @@ func (u *Unit) Copy() Unit {
 	return ret
 }
 
-var stackUseSource = [2]StackUse{
-	{Inputs: [][]int{}, Modifies: []bool{true}, NumOutputs: 1},       // mono
-	{Inputs: [][]int{}, Modifies: []bool{true, true}, NumOutputs: 2}, // stereo
-}
-var stackUseSink = [2]StackUse{
-	{Inputs: [][]int{{0}}, Modifies: []bool{true}, NumOutputs: 0},            // mono
-	{Inputs: [][]int{{0}, {1}}, Modifies: []bool{true, true}, NumOutputs: 0}, // stereo
-}
-var stackUseEffect = [2]StackUse{
-	{Inputs: [][]int{{0}}, Modifies: []bool{true}, NumOutputs: 1},            // mono
-	{Inputs: [][]int{{0}, {1}}, Modifies: []bool{true, true}, NumOutputs: 2}, // stereo
-}
-var stackUseMonoStereo = map[string][2]StackUse{
-	"add": {
-		{Inputs: [][]int{{0, 1}, {1}}, Modifies: []bool{false, true}, NumOutputs: 2},
-		{Inputs: [][]int{{0, 2}, {1, 3}, {2}, {3}}, Modifies: []bool{false, false, true, true}, NumOutputs: 4},
-	},
-	"mul": {
-		{Inputs: [][]int{{0, 1}, {1}}, Modifies: []bool{false, true}, NumOutputs: 2},
-		{Inputs: [][]int{{0, 2}, {1, 3}, {2}, {3}}, Modifies: []bool{false, false, true, true}, NumOutputs: 4},
-	},
-	"addp": {
-		{Inputs: [][]int{{0}, {0}}, Modifies: []bool{true}, NumOutputs: 1},
-		{Inputs: [][]int{{0}, {1}, {0}, {1}}, Modifies: []bool{true, true}, NumOutputs: 2},
-	},
-	"mulp": {
-		{Inputs: [][]int{{0}, {0}}, Modifies: []bool{true}, NumOutputs: 1},
-		{Inputs: [][]int{{0}, {1}, {0}, {1}}, Modifies: []bool{true, true}, NumOutputs: 2},
-	},
-	"xch": {
-		{Inputs: [][]int{{1}, {0}}, Modifies: []bool{false, false}, NumOutputs: 2},
-		{Inputs: [][]int{{2}, {3}, {0}, {1}}, Modifies: []bool{false, false, false, false}, NumOutputs: 4},
-	},
-	"push": {
-		{Inputs: [][]int{{0, 1}}, Modifies: []bool{false, false}, NumOutputs: 2},
-		{Inputs: [][]int{{0, 2}, {1, 3}}, Modifies: []bool{false, false, false, false}, NumOutputs: 4},
-	},
-	"pop":        stackUseSink,
-	"envelope":   stackUseSource,
-	"oscillator": stackUseSource,
-	"noise":      stackUseSource,
-	"loadnote":   stackUseSource,
-	"loadval":    stackUseSource,
-	"receive":    stackUseSource,
-	"in":         stackUseSource,
-	"out":        stackUseSink,
-	"outaux":     stackUseSink,
-	"aux":        stackUseSink,
-	"distort":    stackUseEffect,
-	"hold":       stackUseEffect,
-	"crush":      stackUseEffect,
-	"gain":       stackUseEffect,
-	"invgain":    stackUseEffect,
-	"dbgain":     stackUseEffect,
-	"filter":     stackUseEffect,
-	"clip":       stackUseEffect,
-	"delay":      stackUseEffect,
-	"compressor": {
-		{Inputs: [][]int{{0, 1}}, Modifies: []bool{false, true}, NumOutputs: 2},                            // mono
-		{Inputs: [][]int{{0, 2, 3}, {1, 2, 3}}, Modifies: []bool{false, false, true, true}, NumOutputs: 4}, // stereo
-	},
-	"pan": {
-		{Inputs: [][]int{{0, 1}}, Modifies: []bool{true, true}, NumOutputs: 2},   // mono
-		{Inputs: [][]int{{0}, {1}}, Modifies: []bool{true, true}, NumOutputs: 2}, // mono
-	},
-	"speed": {
-		{Inputs: [][]int{{0}}, Modifies: []bool{true}, NumOutputs: 0},
-		{},
-	},
-	"sync": {
-		{Inputs: [][]int{{0}}, Modifies: []bool{false}, NumOutputs: 1},
-		{},
-	},
-	"belleq": stackUseEffect,
-}
-var stackUseSendNoPop = [2]StackUse{
-	{Inputs: [][]int{{0}}, Modifies: []bool{true}, NumOutputs: 1},
-	{Inputs: [][]int{{0}, {1}}, Modifies: []bool{true, true}, NumOutputs: 2},
-}
-var stackUseSendPop = [2]StackUse{
-	{Inputs: [][]int{{0}}, Modifies: []bool{true}, NumOutputs: 0},            // mono
-	{Inputs: [][]int{{0}, {1}}, Modifies: []bool{true, true}, NumOutputs: 0}, // stereo
-}
-
 func (u *Unit) StackUse() StackUse {
 	if u.Disabled {
 		return StackUse{}
 	}
-	if u.Type == "send" {
-		// "send" unit is special, it has a different stack use depending on sendpop
-		if u.Parameters["sendpop"] == 0 {
-			return stackUseSendNoPop[u.Parameters["stereo"]]
-		}
-		return stackUseSendPop[u.Parameters["stereo"]]
+	if ut, ok := UnitTypes[u.Type]; ok {
+		return ut.StackUse(u)
 	}
-	return stackUseMonoStereo[u.Type][u.Parameters["stereo"]]
+	return StackUse{}
 }
 
 // StackChange returns how this unit will affect the signal stack. "pop" and
@@ -638,7 +745,7 @@ func FindParamForModulationPort(unitName string, index int) (up UnitParameter, u
 	if !ok {
 		return UnitParameter{}, 0, false
 	}
-	for i, param := range unitType {
+	for i, param := range unitType.Params {
 		if !param.CanModulate {
 			continue
 		}

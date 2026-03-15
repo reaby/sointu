@@ -409,12 +409,8 @@ func (n *namedParameter) RoundToGrid(p *Parameter, val int, up bool) int {
 	return roundToGrid(val, 8, up)
 }
 func (n *namedParameter) Reset(p *Parameter) {
-	v, ok := defaultUnits[p.unit.Type].Parameters[p.up.Name]
-	if !ok || p.unit.Parameters[p.up.Name] == v {
-		return
-	}
 	defer p.m.change("Reset"+p.Name(), PatchChange, MinorChange)()
-	p.unit.Parameters[p.up.Name] = v
+	p.unit.Parameters[p.up.Name] = p.up.Default
 }
 
 // GmDlsEntry is a single sample entry from the gm.dls file

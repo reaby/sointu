@@ -262,7 +262,7 @@ func (b *bytecodeBuilder) operand(operands ...int) {
 // defOperands appends the operands to the stream for all parameters that can be
 // modulated and set
 func (b *bytecodeBuilder) defOperands(unit sointu.Unit) {
-	for _, v := range sointu.UnitTypes[unit.Type] {
+	for _, v := range sointu.UnitTypes[unit.Type].Params {
 		if v.CanModulate && v.CanSet {
 			b.Operands = append(b.Operands, byte(unit.Parameters[v.Name]))
 		}

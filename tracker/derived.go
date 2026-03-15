@@ -116,7 +116,7 @@ func (m *Model) deriveParams(unit *sointu.Unit, ret []Parameter) []Parameter {
 		return ret
 	}
 	portIndex := 0
-	for i, up := range unitType {
+	for i, up := range unitType.Params {
 		if !up.CanSet && !up.CanModulate {
 			continue // skip parameters that cannot be set or modulated
 		}
@@ -131,7 +131,7 @@ func (m *Model) deriveParams(unit *sointu.Unit, ret []Parameter) []Parameter {
 			portIndex++
 			q = portIndex
 		}
-		ret = append(ret, Parameter{m: m, unit: unit, up: &unitType[i], vtable: &namedParameter{}, port: q})
+		ret = append(ret, Parameter{m: m, unit: unit, up: &unitType.Params[i], vtable: &namedParameter{}, port: q})
 	}
 	if unit.Type == "oscillator" && unit.Parameters["type"] == sointu.Sample {
 		ret = append(ret, Parameter{m: m, unit: unit, vtable: &gmDlsEntryParameter{}})

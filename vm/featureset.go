@@ -58,7 +58,7 @@ func init() {
 	for k, v := range sointu.UnitTypes {
 		inputCount := 0
 		transformCount := 0
-		for _, t := range v {
+		for _, t := range v.Params {
 			if t.CanModulate {
 				allInputs[paramKey{k, t.Name}] = inputCount
 				inputCount++
@@ -125,7 +125,7 @@ func NecessaryFeaturesFor(patch sointu.Patch) NecessaryFeatures {
 				features.instructions = append(features.instructions, unit.Type)
 				features.opcodes[unit.Type] = len(features.instructions) * 2 // note that the first opcode gets value 1, as 0 is always reserved for advance
 			}
-			for _, paramType := range sointu.UnitTypes[unit.Type] {
+			for _, paramType := range sointu.UnitTypes[unit.Type].Params {
 				v := unit.Parameters[paramType.Name]
 				key := paramKey{unit.Type, paramType.Name}
 				if features.supportsParamValue[key] == nil {
